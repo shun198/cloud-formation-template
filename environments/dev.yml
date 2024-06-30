@@ -1,0 +1,551 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Development Stack"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "CloudFormation Configuration"
+        Parameters:
+          - VPCTemplateURL
+          - SGTemplateURL
+          - CWLogsTemplateURL
+          - ECRTemplateURL
+          - ECSClusterTemplateURL
+          - ACMTemplateURL
+          - ALBTemplateURL
+          - RDSTemplateURL
+      - Label:
+          default: "VPC Configuration"
+        Parameters:
+          - AvailabilityZone1
+          - AvailabilityZone2
+          - VPCCIDR
+          - ALBPublicSubnet1CIDR
+          - ALBPublicSubnet2CIDR
+          - NATGatewayPublicSubnet1CIDR
+          - NATGatewayPublicSubnet2CIDR
+          - ECSProtectedSubnet1CIDR
+          - ECSProtectedSubnet2CIDR
+          - LambdaProtectedSubnet1CIDR
+          - LambdaProtectedSubnet2CIDR
+          - RDSPrivateSubnet1CIDR
+          - RDSPrivateSubnet2CIDR
+          - InternalALBPrivateSubnet1CIDR
+          - InternalALBPrivateSubnet2CIDR
+          - VPCFlowLogsRetentionInDays
+      - Label:
+          default: "SG Configuration"
+        Parameters:
+          - ManagementIPAddress
+          - ManagementIPDescription
+      - Label:
+          default: "CloudWatch Logs Configuration for ECS"
+        Parameters:
+          - AppLogGroupName
+          - WebLogGroupName
+          - LogRetentionInDays
+      - Label:
+          default: "ECR Configuration"
+        Parameters:
+          - AppRepositorySuffix
+          - WebRepositorySuffix
+          - ImageTagMutability
+      - Label:
+          default: "ECS Cluster Configuration"
+        Parameters:
+          - ContainerInsightsEnabled
+      - Label:
+          default: "ACM Configuration"
+        Parameters:
+          - HostZoneID
+      - Label:
+          default: "ALB Configuration"
+        Parameters:
+          - DomainNameForAPI
+          - InternalDomainNameForAPI
+          - PrivateHostZoneID
+          - AuthHeaderName
+          - AuthHeaderValue
+          - HealthCheckPath
+          - IdleTimeoutSeconds
+          - ELBSecurityPolicy
+          - ALBAccessLogsEnabled
+      - Label:
+          default: "RDS (Postgres) Configuration"
+        Parameters:
+          - PostgreSQLMajorVersion
+          - PostgreSQLMinorVersion
+          - RDSDBName
+          - RDSDBMasterUserName
+          - RDSDBMasterUserPassword
+          - RDSDBInstanceClass
+          - RDSDBInstanceStorageSize
+          - RDSDBInstanceStorageType
+          - EnablePerformanceInsights
+          - BackupRetentionPeriod
+          - PreferredBackupWindow
+          - PreferredMaintenanceWindow
+          - AutoMinorVersionUpgradeEnabled
+      - Label:
+          default: "Common Configuration"
+        Parameters:
+          - DeletionProtectionEnabled
+          - MultiAZEnabled
+          - DomainName
+          - DomainNameForAdmin
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  # -------------------------------------
+  # Project
+  # -------------------------------------
+  ProjectName:
+    Description: "Enter the project name (ex: factor-flow-master)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be enter"
+    Default: factor-flow-master
+  Environment:
+    Description: "Select the environment"
+    Type: String
+    AllowedValues: [dev]
+    ConstraintDescription: "Environment must be select"
+    Default: dev
+
+  # -------------------------------------
+  # CloudFormation
+  # -------------------------------------
+  VPCTemplateURL:
+    Description: "VPC template object URL in S3 bucket"
+    Type: String
+  SGTemplateURL:
+    Description: "SG template object URL in S3 bucket"
+    Type: String
+  CWLogsTemplateURL:
+    Description: "CloudWatch Logs template object URL in S3 bucket"
+    Type: String
+  ECRTemplateURL:
+    Description: "ECR template object URL in S3 bucket"
+    Type: String
+  ECSClusterTemplateURL:
+    Description: "ECS Cluster template object URL in S3 bucket"
+    Type: String
+  ACMTemplateURL:
+    Description: "ACM template object URL in S3 bucket"
+    Type: String
+  ALBTemplateURL:
+    Description: "ALB template object URL in S3 bucket"
+    Type: String
+  RDSTemplateURL:
+    Description: "RDS template object URL in S3 bucket"
+    Type: String
+  # -------------------------------------
+  # VPC
+  # -------------------------------------
+  VPCCIDR:
+    Description: "Enter the VPC CIDR block"
+    Type: String
+    Default: 192.168.0.0/16
+  ALBPublicSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for ALB in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.0.0/24
+  ALBPublicSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for ALB in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.1.0/24
+  NATGatewayPublicSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for NAT Gateway in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.2.0/24
+  NATGatewayPublicSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for NAT Gateway in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.3.0/24
+  ECSProtectedSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for ECS in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.4.0/24
+  ECSProtectedSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for ECS in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.5.0/24
+  LambdaProtectedSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for Lambda in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.6.0/24
+  LambdaProtectedSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for Lambda in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.7.0/24
+  RDSPrivateSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for RDS in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.8.0/24
+  RDSPrivateSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for RDS in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.9.0/24
+  InternalALBPrivateSubnet1CIDR:
+    Description: "Enter the Subnet CIDR block for Internal ALB in the 1st Availability Zone"
+    Type: String
+    Default: 192.168.10.0/24
+  InternalALBPrivateSubnet2CIDR:
+    Description: "Enter the Subnet CIDR block for Internal ALB in the 2nd Availability Zone"
+    Type: String
+    Default: 192.168.11.0/24
+  VPCFlowLogsRetentionInDays:
+    Description: "Enter the data retention for VPC FlowLogs with CloudWatch Logs (ex: 30)"
+    Type: Number
+
+  # -------------------------------------
+  # Security Group
+  # -------------------------------------
+  ManagementIPAddress:
+    Description: "Enter the IP addresses for management separated by commas (ex: 0.0.0.0/32,1.1.1.1/32)"
+    Type: CommaDelimitedList
+  ManagementIPDescription:
+    Description: "Enter the descriptions for the management IP addresses separated by commas (ex: from xxxx,from xxxx)"
+    Type: CommaDelimitedList
+
+  # -------------------------------------
+  # CloudWatch Logs (For ECS)
+  # -------------------------------------
+  AppLogGroupName:
+    Description: "CloudWatch Logs log-group name for application (ex: /ecs/factor-flow-master/dev/back/django)"
+    Type: String
+  WebLogGroupName:
+    Description: "CloudWatch Logs log-group name for webserver (ex: /ecs/factor-flow-master/dev/back/nginx)"
+    Type: String
+  LogRetentionInDays:
+    Description: "Enter the data retention period (default: 30)"
+    Type: String
+    Default: 30
+    AllowedValues: [30,60,90,120,150,180,365]
+
+  # -------------------------------------
+  # ECR
+  # -------------------------------------
+  AppRepositorySuffix:
+    Description: "Repository name suffix of the application container image (ex: django)"
+    Type: String
+    Default: django
+  WebRepositorySuffix:
+    Description: "Repository name suffix of the webserver container image (ex: nginx)"
+    Type: String
+    Default: nginx
+  ImageTagMutability:
+    Description: "Select a ECR image mutability (default: MUTABLE)"
+    Type: String
+    Default: MUTABLE
+    AllowedValues: [MUTABLE, IMMUTABLE]
+
+  # -------------------------------------
+  # ECS Cluster
+  # -------------------------------------
+  ContainerInsightsEnabled:
+    Description: "Select whether to enable ECS container insights"
+    Type: String
+    AllowedValues:
+      - disabled
+      - enabled
+    Default: enabled
+
+  # -------------------------------------
+  # ACM
+  # -------------------------------------
+  HostZoneID:
+    Description: "Enter the Route 53 Hosted Zone ID"
+    Type: AWS::Route53::HostedZone::Id
+
+  # -------------------------------------
+  # ALB
+  # -------------------------------------
+  DomainNameForAPI:
+    Description: "Enter the domain name for backend API (ex: api.dev.ffm.aiful-bf.co.jp)"
+    Type: String
+  InternalDomainNameForAPI:
+    Description: "Enter the internal domain name for backend API (ex: internal.dev.ffm.aiful-bf.co.jp)"
+    Type: String
+  PrivateHostZoneID:
+    Description: "Select the Route 53 private hosted zone ID"
+    Type: AWS::Route53::HostedZone::Id
+  AuthHeaderName:
+    Description: "Enter the header name required for authentication between Amplify and ALB (default: X-Auth-ALB)"
+    Type: String
+    Default: X-Auth-ALB
+  AuthHeaderValue:
+    Description: "Enter the header value required for authentication between Amplify and ALB"
+    Type: String
+  # ALB からのヘルスチェックに応答するパス
+  HealthCheckPath:
+    Description: "Enter the path respond to health checks from ELB (for ALB)"
+    Type: String
+    Default: /api/health
+  # アイドルタイムアウト値
+  IdleTimeoutSeconds:
+    Description: "Enter the ELB (for ALB) idle timeout seconds (default: 60)"
+    Type: String
+    Default: 60
+  ELBSecurityPolicy:
+    Description: "Select the ELB security policies"
+    Type: String
+    Default: ELBSecurityPolicy-TLS13-1-2-2021-06
+  # アクセスログ
+  ALBAccessLogsEnabled:
+    Description: "Select whether to enable ALB access logs"
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+
+  # -------------------------------------
+  # RDS (Postgres)
+  # -------------------------------------
+  PostgreSQLMajorVersion:
+    Description: "Select the Postgres engine major version (default: 16.0)"
+    Type: String
+    Default: 16
+    AllowedValues: [16]
+  PostgreSQLMinorVersion:
+    Description: "Select the Postgres engine minor version"
+    Type: String
+    Default: 2
+    AllowedValues: [0, 1, 2]
+  RDSDBName:
+    Description: "Enter the database name (ex: factor_flow_master_development)"
+    Type: String
+  RDSDBMasterUserName:
+    Description: "Enter the master username, following your company's naming rule (ref: https://pj100.esa.io/posts/9475)"
+    Type: String
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "^[a-zA-Z][a-zA-Z_0-9]*"
+    ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters"
+  RDSDBMasterUserPassword:
+    Description: "Enter the master password"
+    Type: String
+    NoEcho: true
+    MinLength: 10
+    MaxLength: 41
+    AllowedPattern: "^[a-zA-Z0-9]*"
+    ConstraintDescription: "Must contain only alphanumeric characters"
+  RDSDBInstanceClass:
+    Description: "Select the DB Instance class"
+    Type: String
+    Default: db.t4g.small
+    AllowedValues:
+      - db.t4g.micro
+      - db.t4g.small
+      - db.t4g.medium
+      - db.m7g.large
+      - db.r7g.large
+  RDSDBInstanceStorageSize:
+    Description: "Enter the DB Instance storage size (default: 20 GiB)"
+    Type: String
+    Default: 20
+  RDSDBInstanceStorageType:
+    Description: "Enter the DB Instance storage type (default: gp3)"
+    Type: String
+    Default: gp3
+    AllowedValues: [gp3, io1]
+  EnablePerformanceInsights:
+    Description: "Select whether to enable performance insights"
+    Type: String
+    Default: True
+    AllowedValues: [true, false]
+  BackupRetentionPeriod:
+    Description: "Select the backup retention period"
+    Type: String
+    Default: 1
+    AllowedValues: [0, 1, 3, 7, 14, 21, 30, 35]
+  PreferredBackupWindow:
+    Description: "Enter the time of day to perform backups, separated by 30 minutes (format/UTC: hh24:mi-hh24:mi)"
+    Type: String
+    Default: 19:00-19:30
+  PreferredMaintenanceWindow:
+    Description: "Enter the time of day to perform maintenances, separated by 30 minutes (format/UTC: ddd:hh24:mi-ddd:hh24:mi)"
+    Type: String
+    Default: sun:20:00-sun:20:30
+  AutoMinorVersionUpgradeEnabled:
+    Description: "Select whether to enable RDS DB Instance minor version auto upgrade"
+    Type: String
+    Default: true
+    AllowedValues: [true, false]
+
+  # -------------------------------------
+  # Common
+  # -------------------------------------
+  # ALB, RDS の削除保護
+  DeletionProtectionEnabled:
+    Description: "Select whether to enable deletion protection (for ALB, RDS)"
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+  # RDS のマルチ AZ 配置を有効化するかどうか
+  MultiAZEnabled:
+    Description: "Select whether you want to enable Multi-AZ or not (default: false)"
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+  DomainName:
+    Description: "Enter the domain name (CNAME) (ex: dev.ffm.aiful-bf.co.jp)"
+    Type: String
+  DomainNameForAdmin:
+    Description: "Enter the admin domain name (CNAME) (ex: dev.admin.ffm.aiful-bf.co.jp)"
+    Type: String
+
+# -------------------------------------
+# Resources
+# -------------------------------------
+Resources:
+  VPCStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref VPCTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        AvailabilityZone1: !Select [0, !GetAZs ""]
+        AvailabilityZone2: !Select [1, !GetAZs ""]
+        VPCCIDR: !Ref VPCCIDR
+        ALBPublicSubnet1CIDR: !Ref ALBPublicSubnet1CIDR
+        ALBPublicSubnet2CIDR: !Ref ALBPublicSubnet2CIDR
+        NATGatewayPublicSubnet1CIDR: !Ref NATGatewayPublicSubnet1CIDR
+        NATGatewayPublicSubnet2CIDR: !Ref NATGatewayPublicSubnet2CIDR
+        ECSProtectedSubnet1CIDR: !Ref ECSProtectedSubnet1CIDR
+        ECSProtectedSubnet2CIDR: !Ref ECSProtectedSubnet2CIDR
+        LambdaProtectedSubnet1CIDR: !Ref LambdaProtectedSubnet1CIDR
+        LambdaProtectedSubnet2CIDR: !Ref LambdaProtectedSubnet2CIDR
+        RDSPrivateSubnet1CIDR: !Ref RDSPrivateSubnet1CIDR
+        RDSPrivateSubnet2CIDR: !Ref RDSPrivateSubnet2CIDR
+        InternalALBPrivateSubnet1CIDR: !Ref InternalALBPrivateSubnet1CIDR
+        InternalALBPrivateSubnet2CIDR: !Ref InternalALBPrivateSubnet2CIDR
+        VPCFlowLogsRetentionInDays: !Ref VPCFlowLogsRetentionInDays
+  SGStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref SGTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        # PyPlate で値を取り出すため配列を渡す
+        ManagementIPAddress: !Join [',', !Ref ManagementIPAddress]
+        ManagementIPDescription: !Join [',', !Ref ManagementIPDescription]
+  CWLogsStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref CWLogsTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        AppLogGroupName: !Ref AppLogGroupName
+        WebLogGroupName: !Ref WebLogGroupName
+        LogRetentionInDays: !Ref LogRetentionInDays
+  ECRStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref ECRTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        AppRepositorySuffix: !Ref AppRepositorySuffix
+        WebRepositorySuffix: !Ref WebRepositorySuffix
+        ImageTagMutability: !Ref ImageTagMutability
+  ECSClusterStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref ECSClusterTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        ContainerInsightsEnabled: !Ref ContainerInsightsEnabled
+  ACMStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref ACMTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        HostZoneID: !Ref HostZoneID
+  ALBStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref ALBTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        DomainNameForAPI: !Ref DomainNameForAPI
+        InternalDomainNameForAPI: !Ref InternalDomainNameForAPI
+        DomainName: !Ref DomainName
+        DomainNameForAdmin: !Ref DomainNameForAdmin
+        PrivateHostZoneID: !Ref PrivateHostZoneID
+        AuthHeaderName: !Ref AuthHeaderName
+        AuthHeaderValue: !Ref AuthHeaderValue
+        HealthCheckPath: !Ref HealthCheckPath
+        IdleTimeoutSeconds: !Ref IdleTimeoutSeconds
+        ELBSecurityPolicy: !Ref ELBSecurityPolicy
+        ALBAccessLogsEnabled: !Ref ALBAccessLogsEnabled
+        DeletionProtectionEnabled: !Ref DeletionProtectionEnabled
+        HostZoneID: !GetAtt ACMStack.Outputs.HostZoneID
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        ALBPublicSubnet1: !GetAtt VPCStack.Outputs.ALBPublicSubnet1
+        ALBPublicSubnet2: !GetAtt VPCStack.Outputs.ALBPublicSubnet2
+        ALBSecurityGroupID: !GetAtt SGStack.Outputs.ALBSG
+        InternalALBPrivateSubnet1: !GetAtt VPCStack.Outputs.InternalALBPrivateSubnet1
+        InternalALBPrivateSubnet2: !GetAtt VPCStack.Outputs.InternalALBPrivateSubnet2
+        InternalALBSecurityGroupID: !GetAtt SGStack.Outputs.InternalALBSG
+        ACMCertificateArn: !GetAtt ACMStack.Outputs.ACMPublicCertificateArn
+  RDSStack:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref RDSTemplateURL
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        PostgreSQLMajorVersion: !Ref PostgreSQLMajorVersion
+        PostgreSQLMinorVersion: !Ref PostgreSQLMinorVersion
+        RDSDBName: !Ref RDSDBName
+        RDSDBMasterUserName: !Ref RDSDBMasterUserName
+        RDSDBMasterUserPassword: !Ref RDSDBMasterUserPassword
+        RDSDBInstanceClass: !Ref RDSDBInstanceClass
+        RDSDBInstanceStorageSize: !Ref RDSDBInstanceStorageSize
+        RDSDBInstanceStorageType: !Ref RDSDBInstanceStorageType
+        RDSPrivateSubnet1: !GetAtt VPCStack.Outputs.RDSPrivateSubnet1
+        RDSPrivateSubnet2: !GetAtt VPCStack.Outputs.RDSPrivateSubnet2
+        RDSDBSecurityGroupID: !GetAtt SGStack.Outputs.RDSForPostgreSQLSG
+        EnablePerformanceInsights: !Ref EnablePerformanceInsights
+        BackupRetentionPeriod: !Ref BackupRetentionPeriod
+        PreferredBackupWindow: !Ref PreferredBackupWindow
+        PreferredMaintenanceWindow: !Ref PreferredMaintenanceWindow
+        MultiAZEnabled: !Ref MultiAZEnabled
+        AutoMinorVersionUpgradeEnabled: !Ref AutoMinorVersionUpgradeEnabled
+        DeletionProtectionEnabled: !Ref DeletionProtectionEnabled

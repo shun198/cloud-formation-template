@@ -1,71 +1,80 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ACM Certificate Stack
-Mappings:
-  DomainsMap:
-    Environment:
-      dev: shun-practice.com
+Description: "ACM Certificate Stack"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: Project Configuration
+          default: "Project Configuration"
         Parameters:
           - ProjectName
           - Environment
       - Label:
-          default: Route 53 Configuration
+          default: "Route 53 Configuration"
         Parameters:
+          - DomainName
           - HostZoneID
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
 Parameters:
   ProjectName:
-    Description: 'Enter the project name. (ex: my-project)'
+    Description: "Enter the project name (ex: factor-flow-master)"
     Type: String
     MinLength: 1
-    ConstraintDescription: ProjectName must be enter.
-    Default: my-project
+    ConstraintDescription: "ProjectName must be enter"
+    Default: factor-flow-master
   Environment:
-    Description: Select the environment.
+    Description: "Select the environment"
     Type: String
     AllowedValues:
       - dev
       - stg
       - prd
-    ConstraintDescription: Environment must be select.
+    ConstraintDescription: "Environment must be select"
+  DomainName:
+    Description: "Enter the domain name (CNAME) (ex: shun-practice.com)"
+    Type: String
   HostZoneID:
-    Description: Enter the Route 53 Hosted Zone ID.
+    Description: "Enter the Route 53 Hosted Zone ID"
     Type: AWS::Route53::HostedZone::Id
+
+# -------------------------------------
+# Resources
+# -------------------------------------
 Resources:
+  # -------------------------------------
+  # ACM
+  # -------------------------------------
   ACMPublicCertificate:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Type: AWS::CertificateManager::Certificate
     Properties:
-      DomainName: !FindInMap
-        - DomainsMap
-        - Environment
-        - !Ref Environment
+      DomainName: !Ref DomainName
       DomainValidationOptions:
-        - DomainName: !FindInMap
-            - DomainsMap
-            - Environment
-            - !Ref Environment
+        - DomainName: !Ref DomainName
           HostedZoneId: !Ref HostZoneID
       SubjectAlternativeNames:
-        - !Sub
-          - '*.${DomainName}'
-          - DomainName: !FindInMap
-              - DomainsMap
-              - Environment
-              - !Ref Environment
+        - !Sub "*.${DomainName}"
       ValidationMethod: DNS
       Tags:
         - Key: ProjectName
           Value: !Ref ProjectName
         - Key: Environment
           Value: !Ref Environment
+
+# -------------------------------------
+# Outputs
+# -------------------------------------
 Outputs:
   ACMPublicCertificateArn:
     Value: !Ref ACMPublicCertificate
-  TargetDomainName:
-    Value: !FindInMap
-      - DomainsMap
-      - Environment
-      - !Ref Environment
+  DomainName:
+    Value: !Ref DomainName
+  HostZoneID:
+    Value: !Ref HostZoneID
