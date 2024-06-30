@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "WAFv2 Stack For Private CloudFront"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    # パラメータの並び順を記載
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "WAFv2 Configuration"
+        Parameters:
+          - WAFLogsPrefix
+          - Route53HealthCheckerIPs
+          - IPWhiteList
+          - CloudFrontDistributionID
+          - CWLogsRetentionInDays
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  ProjectName:
+    Description: "Enter the project name (ex: my-practice)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be entered"
+    Default: my-practice
+  Environment:
+    Description: "Select a environment name"
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+    ConstraintDescription: "Environment must be selected"
+  WAFLogsPrefix:
+    Description: "Enter the prefix for WAF logs"
+    Type: String
+    Default: aws-waf-logs
+    AllowedValues:
+      - aws-waf-logs
+  # ref: https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-ip-addresses.html
+  Route53HealthCheckerIPs:
+    Description: "Enter the IP address for Route53 HealthChecker separated by commas (ex: 0.0.0.0/32,1.1.1.1/32,2.2.2.2/32)"
+    Type: CommaDelimitedList
+    Default: 54.243.31.192/26,54.244.52.192/26,54.245.168.0/26,54.248.220.0/26,54.250.253.192/26,54.251.31.128/26,54.255.254.192/26,15.177.0.0/18
+  IPWhiteList:
+    Description: "Enter the IP addresses for whitelist separated by commas (ex: 1.1.1.1/32,2.2.2.2/32)"
+    Type: CommaDelimitedList
+    Default: 203.180.184.18/32,203.180.184.19/32
+  CloudFrontDistributionID:
+    Description: "Enter the CloudFront DistributionID for configuring WAFv2"
+    Type: String
+  CWLogsRetentionInDays:
+    Description: "Enter the data retention period for CloudWatch Logs (ex: 30)"
+    Type: String
+    AllowedValues: [30,60,90,120,150,180,365]
+
+# -------------------------------------
+# Resources
+# -------------------------------------
+Resources:
+  # -------------------------------------
+  # S3 Bucket (WAFv2 Logs)
+  # -------------------------------------
+  WAFLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${WAFLogsPrefix}-for-${ProjectName}-${Environment}-private-cf
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacierAfter365Days
+            Status: Enabled
+            Prefix: logs/
+            Transitions:
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+          - Id: ExpireAfter5Years
+            Status: Enabled
+            ExpirationInDays: 1825
+
+  # -------------------------------------
+  # WAFv2 ACL
+  # -------------------------------------
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub ${ProjectName}-${Environment}-private-cf-waf
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Block: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub ${ProjectName}-${Environment}-private-cf-waf
+      Rules:
+        - Name: Custom-IPAddressWhitelist
+          Priority: 10
+          Action:
+            Allow: {}
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt IPAddressWhitelist.Arn
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: Custom-IPAddressWhitelist
+        - Name: Custom-Route53IPAddressWhitelist
+          Priority: 20
+          Action:
+            Allow: {}
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt Route53IPAddressWhitelist.Arn
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: Custom-Route53IPAddressWhitelist
+
+  # -------------------------------------
+  # WAFv2 IP Set
+  # -------------------------------------
+  IPAddressWhitelist:
+    Type: AWS::WAFv2::IPSet
+    Properties:
+      Name: !Sub Custom-IPAddressWhitelist-for-${ProjectName}-${Environment}-private-cf-waf
+      Description: "This List of IP addresses unaccessible to the application"
+      Scope: CLOUDFRONT
+      IPAddressVersion: IPV4
+      Addresses: !Ref IPWhiteList
+  Route53IPAddressWhitelist:
+    Type: AWS::WAFv2::IPSet
+    Properties:
+      Name: !Sub Custom-Route53IPAddressWhitelist-for-${ProjectName}-${Environment}-private-cf-waf
+      Description: "This List of IP addresses that are used for AWS Route53 Health Checks"
+      Scope: CLOUDFRONT
+      IPAddressVersion: IPV4
+      Addresses: !Ref Route53HealthCheckerIPs
+
+  # -------------------------------------
+  # CloudWatch Logs Log Group (WAFv2)
+  # -------------------------------------
+  WAFLogsDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${WAFLogsPrefix}-for-${ProjectName}-${Environment}-private-cf-${CloudFrontDistributionID}
+      RetentionInDays: !Ref CWLogsRetentionInDays
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------
+  # WAFv2 Log Subscription
+  # -------------------------------------
+  WAFLogsSubscriptionFilter:
+    DependsOn: CloudWatchLogsRolePolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      RoleArn: !GetAtt CloudWatchLogsRole.Arn
+      LogGroupName: !Ref WAFLogsDeliveryStreamLogGroup
+      FilterPattern: ""
+      DestinationArn: !GetAtt WAFv2ForCFDeliveryStream.Arn
+
+  # -------------------------------------
+  # WAFv2 Logs Config
+  # -------------------------------------
+  WAFLogsConfig:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      LogDestinationConfigs:
+        - !Sub
+          - arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WAFLogsDeliveryStreamLogGroup}
+          - { WAFLogsDeliveryStreamLogGroup: !Ref WAFLogsDeliveryStreamLogGroup }
+      ResourceArn: !GetAtt WebACL.Arn
+
+  # -------------------------------------
+  # Kinesis Data Firehose Delivery Stream
+  # -------------------------------------
+  WAFv2ForCFDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub s3-delivery-stream-${ProjectName}-${Environment}-ad-cf-${CloudFrontDistributionID}
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt WAFLogsBucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        Prefix: ""
+        RoleARN: !GetAtt KinesisDataFirehoseRole.Arn
+        ProcessingConfiguration:
+          Enabled: false
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: /aws/kinesisfirehose/s3-delivery-streams
+          LogStreamName: !Sub s3-delivery-waf-${ProjectName}-${Environment}-private-cf-${CloudFrontDistributionID}
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------
+  # IAM Role & IAM Policy
+  # -------------------------------------
+  # for CloudWatch Logs
+  CloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub CWLogsRoleForKinesisFirehose-${ProjectName}-${Environment}-private-cf-waf
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+  # 自己参照回避
+  CloudWatchLogsRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub CWLogsAccessForKinesisFirehose-${ProjectName}-${Environment}-private-cf-waf
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - firehose:PutRecord
+              - firehose:PutRecordBatch
+            Resource:
+              - !GetAtt WAFv2ForCFDeliveryStream.Arn
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !GetAtt CloudWatchLogsRole.Arn
+      Roles:
+        - !Ref CloudWatchLogsRole
+  # for Kinesis Firehose
+  KinesisDataFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub KinesisFirehoseRoleForS3-${ProjectName}-${Environment}-private-cf-waf
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Path: /
+      Policies:
+        - PolicyName: !Sub KinesisFirehoseAccessForS3-${ProjectName}-${Environment}-private-cf-waf
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt WAFLogsBucket.Arn
+                  - !Sub
+                    - ${WAFLogsBucket}/*
+                    - { WAFLogsBucket: !GetAtt WAFLogsBucket.Arn }
+                  - !Sub
+                    - ${WAFLogsDeliveryStreamLogGroup}:log-stream:*
+                    - { WAFLogsDeliveryStreamLogGroup: !GetAtt WAFLogsDeliveryStreamLogGroup.Arn }
+
+# -------------------------------------
+# Outputs
+# -------------------------------------
+Outputs:
+  privateCloudFrontWebACLArn:
+    Value: !GetAtt WebACL.Arn
+  WAFLogsBucketArn:
+    Value: !GetAtt WAFLogsBucket.Arn

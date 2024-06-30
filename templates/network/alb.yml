@@ -30,7 +30,6 @@ Metadata:
           - DomainNameForAPI
           - InternalDomainNameForAPI
           - DomainName
-          - DomainNameForAdmin
           - HostZoneID
           - PrivateHostZoneID
           - ALBPublicSubnet1
@@ -74,16 +73,13 @@ Parameters:
       - prd
     ConstraintDescription: "Environment must be select"
   DomainNameForAPI:
-    Description: "Enter the domain name for backend API (ex: api.dev.ffm.aiful-bf.co.jp)"
+    Description: "Enter the domain name for backend API (ex: api.shun-practice.com)"
     Type: String
   InternalDomainNameForAPI:
-    Description: "Enter the internal domain name for backend API (ex: internal.dev.ffm.aiful-bf.co.jp)"
+    Description: "Enter the internal domain name for backend API (ex: internal.shun-practice.com)"
     Type: String
   DomainName:
-    Description: "Enter the domain name for frontend (ex: dev.ffm.aiful-bf.co.jp)"
-    Type: String
-  DomainNameForAdmin:
-    Description: "Enter the domain name for admin frontend (ex: dev.admin.ffm.aiful-bf.co.jp)"
+    Description: "Enter the domain name for frontend (ex: shun-practice.com)"
     Type: String
   HostZoneID:
     Type: AWS::Route53::HostedZone::Id
@@ -346,7 +342,6 @@ Resources:
             HttpHeaderName: Origin
             Values:
               - !Sub https://${DomainName}
-              - !Sub https://${DomainNameForAdmin}
       ListenerArn: !Ref ALBListenerHTTPS
       Priority: 1
 
