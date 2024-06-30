@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Logging Stack For Backend"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "CloudWatch Logs Configuration"
+        Parameters:
+          - BackendAppLogGroupName
+          - BackendWebLogGroupName
+      - Label:
+          default: "Kinesis Data Firehose (S3 Direct PUT) Configuration"
+        Parameters:
+          - BackendAppLogsBucketName
+          - BackendWebLogsBucketName
+          - PrefixForKinesisDataFirehose
+          - CloudWatchLoggingOptionsAppLogGroupName
+          - CloudWatchLoggingOptionsWebLogGroupName
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  ProjectName:
+    Description: "Enter the project name (ex: my-project)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be enter"
+    Default: my-project
+  Environment:
+    Description: "Select the environment"
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+    ConstraintDescription: "Environment must be select"
+  BackendAppLogGroupName:
+    Description: "Enter the CloudWatch Logs log group name of backend application for Kinesis Data Firehose Delivery Stream (ex: /ecs/my-project/dev/back/django)"
+    Type: String
+  BackendWebLogGroupName:
+    Description: "Enter the CloudWatch Logs log group name of backend web server for Kinesis Data Firehose Delivery Stream (ex: /ecs/my-project/dev/back/nginx)"
+    Type: String
+  BackendAppLogsBucketName:
+    Description: "Enter the destination S3 bucket name of backend application for Kinesis Data Firehose Delivery Stream output (ex: my-project-dev-back-django-logs)"
+    Type: String
+  BackendWebLogsBucketName:
+    Description: "Enter the destination S3 bucket name of backend web server for Kinesis Data Firehose Delivery Stream output (ex: my-project-dev-back-nginx-logs)"
+    Type: String
+  PrefixForKinesisDataFirehose:
+    Description: "Enter the prefix for Kinesis Data Firehose Delivery Stream"
+    Type: String
+  CloudWatchLoggingOptionsAppLogGroupName:
+    Description: "Enter the CloudWatch Logs log group name of backend application for Kinesis Data Firehose Delivery Stream execution logs (ex: /aws/kinesisfirehose/s3-delivery-stream/my-project-dev-back-django)"
+    Type: String
+  CloudWatchLoggingOptionsWebLogGroupName:
+    Description: "Enter the CloudWatch Logs log group name of backend web server for Kinesis Data Firehose Delivery Stream execution logs (ex: /aws/kinesisfirehose/s3-delivery-stream/my-project-dev-back-nginx)"
+    Type: String
+
+# -------------------------------------
+# Resources
+# -------------------------------------
+Resources:
+  # -------------------------------------
+  # S3 Bucket
+  # -------------------------------------
+  BackendAppLogsBucket:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BackendAppLogsBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: Retain1YearAndArchive4Years
+            Status: Enabled
+            ExpirationInDays: 1825
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 365
+  BackendWebLogsBucket:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BackendWebLogsBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: Retain1YearAndArchive4Years
+            Status: Enabled
+            ExpirationInDays: 1825
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 365
+
+  # -------------------------------------
+  # IAM Role
+  # -------------------------------------
+  # For CloudWatch Logs
+  CloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub CloudWatchLogsRoleForKinesisDataFirehose-${ProjectName}-${Environment}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - sts:AssumeRole
+  # 自己参照回避
+  CloudWatchLogsRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub CloudWatchLogsAccessForKinesisDataFirehose-${ProjectName}-${Environment}
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - firehose:*
+            Resource:
+              - !Sub arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:*
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !GetAtt CloudWatchLogsRole.Arn
+      Roles:
+        - !Ref CloudWatchLogsRole
+
+  # For Kinesis Firehose
+  KinesisDataFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub KinesisDataFirehoseRoleForS3-${ProjectName}-${Environment}
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: !Sub KinesisDataFirehoseAccessForS3-${ProjectName}-${Environment}
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt BackendAppLogsBucket.Arn
+                  - !Sub arn:aws:s3:::${BackendAppLogsBucket}/*
+                  - !GetAtt BackendWebLogsBucket.Arn
+                  - !Sub arn:aws:s3:::${BackendWebLogsBucket}/*
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BackendAppLogGroupName}:log-stream:*
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BackendWebLogGroupName}:log-stream:*
+
+  # -------------------------------------
+  # Kinesis Data Firehose Delivery Stream
+  # -------------------------------------
+  BackendAppDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub kinesis-s3-for-${BackendAppLogsBucketName}
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt BackendAppLogsBucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        Prefix: !Ref PrefixForKinesisDataFirehose
+        RoleARN: !GetAtt KinesisDataFirehoseRole.Arn
+        ProcessingConfiguration:
+          Enabled: false
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref CloudWatchLoggingOptionsAppLogGroupName
+          LogStreamName: s3-delivery-app
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+  BackendWebDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub kinesis-s3-for-${BackendWebLogsBucketName}
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt BackendWebLogsBucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        Prefix: !Ref PrefixForKinesisDataFirehose
+        RoleARN: !GetAtt KinesisDataFirehoseRole.Arn
+        ProcessingConfiguration:
+          Enabled: false
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref CloudWatchLoggingOptionsWebLogGroupName
+          LogStreamName: s3-delivery-web
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------
+  # CloudWatch Logs
+  # -------------------------------------
+  # Subscription Filter
+  BackendAppLogSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      RoleArn: !GetAtt CloudWatchLogsRole.Arn
+      LogGroupName: !Ref BackendAppLogGroupName
+      FilterPattern: ""
+      DestinationArn: !GetAtt BackendAppDeliveryStream.Arn
+  BackendWebLogSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      RoleArn: !GetAtt CloudWatchLogsRole.Arn
+      LogGroupName: !Ref BackendWebLogGroupName
+      FilterPattern: ""
+      DestinationArn: !GetAtt BackendWebDeliveryStream.Arn
+  # Metric Filter
+  ErrorInBackendAppLogs:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BackendAppLogGroupName
+      FilterPattern: ERROR
+      MetricTransformations:
+        - DefaultValue: 0
+          MetricValue: 1
+          MetricNamespace: Backend/Logs
+          MetricName: ErrorInBackendAppLogs
+  CriticalInBackendAppLogs:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BackendAppLogGroupName
+      FilterPattern: CRITICAL
+      MetricTransformations:
+        - DefaultValue: 0
+          MetricValue: 1
+          MetricNamespace: Backend/Logs
+          MetricName: CriticalInBackendAppLogs
+  ErrorInBackendWebLogs:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BackendWebLogGroupName
+      FilterPattern: ?"[error]" ?"[crit]" ?"[alert]" ?"[emerg]"
+      MetricTransformations:
+        - DefaultValue: 0
+          MetricValue: 1
+          MetricNamespace: Backend/Logs
+          MetricName: ErrorInBackendWebLogs
+  CriticalInBackendWebLogs:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BackendWebLogGroupName
+      FilterPattern: CRITICAL
+      MetricTransformations:
+        - DefaultValue: 0
+          MetricValue: 1
+          MetricNamespace: Backend/Logs
+          MetricName: CriticalInBackendWebLogs

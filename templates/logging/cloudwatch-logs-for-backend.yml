@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CloudWatch Logs Stack For Backend"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "CloudWatch Logs Configuration for ECS Fargate"
+        Parameters:
+          - AppLogGroupName
+          - WebLogGroupName
+          - LogRetentionInDays
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  ProjectName:
+    Description: "Enter the project name (ex: my-project)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be enter"
+    Default: my-project
+  Environment:
+    Description: "Select the environment"
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+    ConstraintDescription: "Environment must be select"
+  AppLogGroupName:
+    Description: "CloudWatch Logs log-group name for application (ex: /ecs/my-project/<environment>/back/django)"
+    Type: String
+  WebLogGroupName:
+    Description: "CloudWatch Logs log-group name for webserver (ex: /ecs/my-project/<environment>/back/nginx)"
+    Type: String
+  LogRetentionInDays:
+    Description: "Enter the data retention period (ex: 30)"
+    Type: String
+    AllowedValues: [30,60,90]
+
+# -------------------------------------
+# Resources
+# -------------------------------------
+Resources:
+  # -------------------------------------
+  # CloudWatchLogs LogGroup
+  # -------------------------------------
+  # for application
+  LogGroupForApp:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref AppLogGroupName
+      RetentionInDays: !Ref LogRetentionInDays
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+  # for webserver
+  LogGroupForWeb:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      RetentionInDays: !Ref LogRetentionInDays
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment

@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CloudWatch Alarm Stack For Route 53 Health Check"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "Route 53 Configuration"
+        Parameters:
+          - DomainName
+          - HealthCheckType
+          - HealthCheckPort
+      - Label:
+          default: "SNS Configuration"
+        Parameters:
+          - SNSAlertTopicName
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  ProjectName:
+    Description: "Enter the project name (ex: my-project)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be enter"
+    Default: my-project
+  Environment:
+    Description: "Select a environment name"
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+    ConstraintDescription: "Environment must be select"
+  DomainName:
+    Description: "Enter the domain name (CNAME) (ex: shun-practice.com)"
+    Type: String
+  HealthCheckType:
+    Description: "Select a health check type"
+    Type: String
+    Default: HTTPS
+    AllowedValues:
+      - HTTP
+      - HTTPS
+      - TCP
+  HealthCheckPort:
+    Description: "Select a health check port"
+    Type: String
+    Default: 443
+    AllowedValues:
+      - 80
+      - 443
+  SNSAlertTopicName:
+    Description: "Enter the name of the SNS topic notification"
+    Type: String
+    Default: ai-alert
+
+# -------------------------------------
+# Resources
+# -------------------------------------
+Resources:
+  Route53HealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: !Ref HealthCheckType
+        Port: !Ref HealthCheckPort
+        FullyQualifiedDomainName: !Ref DomainName
+        # デフォルト値
+        RequestInterval: 30
+        # デフォルト値
+        FailureThreshold: 3
+        # 推奨リージョン 8 箇所から 4 リージョンに限定
+        Regions:
+          - us-east-1
+          - us-west-2
+          - ap-southeast-1
+          - ap-northeast-1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Ref DomainName
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+  Route53HealthCheckAdmin:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: !Ref HealthCheckType
+        Port: !Ref HealthCheckPort
+        FullyQualifiedDomainName: !Ref DomainName
+        # デフォルト値
+        RequestInterval: 30
+        # デフォルト値
+        FailureThreshold: 3
+        # 推奨リージョン 8 箇所から 4 リージョンに限定
+        Regions:
+          - us-east-1
+          - us-west-2
+          - ap-southeast-1
+          - ap-northeast-1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Ref DomainName
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------
+  # Route 53 URL (ヘルスチェック失敗時)
+  # -------------------------------------
+  Route53LowHealthCheckStatus:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSAlertTopicName}
+      AlarmName: !Sub
+        - Std_${DomainName}_awsroute53-${Route53HealthCheck}_Low-HealthCheckStatus
+        - DomainName: !Ref DomainName
+      AlarmDescription: !Sub
+        - ${DomainName} への URL ヘルスチェック失敗 | サイト影響を確認してください
+        - DomainName: !Ref DomainName
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Statistic: Minimum
+      ComparisonOperator: LessThanThreshold
+      Threshold: 1
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      TreatMissingData: missing
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref Route53HealthCheck
+  Route53LowHealthCheckStatusAdmin:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSAlertTopicName}
+      AlarmName: !Sub
+        - Std_${DomainName}_awsroute53-${Route53HealthCheckAdmin}_Low-HealthCheckStatus
+        - DomainName: !Ref DomainName
+      AlarmDescription: !Sub
+        - ${DomainName} への URL ヘルスチェック失敗 | サイト影響を確認してください
+        - DomainName: !Ref DomainName
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Statistic: Minimum
+      ComparisonOperator: LessThanThreshold
+      Threshold: 1
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      TreatMissingData: missing
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref Route53HealthCheckAdmin
